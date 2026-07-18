@@ -1,22 +1,21 @@
 # Web Application Security Labs
 
-This repository contains structured web appication security assessments performed in deliberately vulnerable training environments.
+This repository contains structured web application security assessments performed in deliberately vulnerable training environments.
 
-The work started as practical notes from `PortSwigger Web Security Academy labs`. I rebuild those notesi nto focused reports that document the security question, testing approach, vulnerable behavior, evidence, impact, root cause, and remediation. 
-The aim is to show how I approac
+The work started as practical notes from `PortSwigger Web Security Academy labs`. I rebuild those notes into focused reports that document the security question, testing approach, vulnerable behavior, evidence, impact, root cause, and remediation. 
 
 ## What this project covers
 
 The current assessments focus on three areas:
 
 - OAuth and authorization flow security.
-- HTTP Host heaeder trust and password reset poisonning
+- HTTP Host header trust and password reset poisoning
 - File upload validation and server-side execution
 
 The completed lab work includes:
 
 - Authorization code leakage through insufficient `redirect_uri` validation
-- Basic passwowrd reset poisoning through attacker-controlled host information
+- Basic password reset poisoning through attacker-controlled host information
 - Password reset poisoning through `X-Forwarded-Host`
 - Password reset poisoning through dangling markup
 - File upload blacklist bypass through an uploaded Apache `.htaccess` file
