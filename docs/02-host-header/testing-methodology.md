@@ -1,114 +1,153 @@
-# Testing for Host Header Vulnerabilities
+# Testing Methodology for Host Header Vulnerabilities
 
-Basically, we need to identify if we can modify the **Host header** and reach the target application with our request. 
+A modified Host value is not automatically a vulnerability. The purpose of testing is to determine whether attacker-controlled authority information reaches a security-sensitive sink.
 
-If this is the case, tthen we can use the header to probe the app and observe the effects on the response.
+I use the following sequence to avoid jumping directly from "the app accepted my header" to an unsupported impact claim.
 
-## Supply an arbitrary Host header
+## 1. Establish baseline behavior
 
-Test what happens when we supply an arbitrary domain name via the Host header.
+Capture a normal request and record:
 
-**Burp** maintains the separation between the **Host header** and the target **IP address** which allows us to supply any arbitrary Host header, and make sure that the request is sent to the intended target.
+- The public app host
+- Any reverse-proxy or CDN behavior
+- Redirects
+- Absolute URLs returned in the response
+- Forwarding headers already present
 
-Usually there will be two cases:
-- Even with an unexpected Host header we can access the target website - this can be because servevrs sometimes have a default or fallback option in case of a domain name they don't recognize. *Next, begin studying what the app does with the Host header and if it's exploitable*.
-- We get `Invalid Host header` which is especially likely if the target is accessed via a CDN.
+A clean baseline makes later parsing differences easier to identify.
 
-If it's the second case, we can:
+## 2. Supply an unexpected Host value
 
-## Check for flawed validation
-
-Some websites validate if the Host header matches the **SNI** from the TLS handshake - try to understand how the website parses the Host header..
-
-For example, some parsing algorithms omit the port from the Host header, so only the domain name is validated.
-
-In this case, leave the domain name untouched and reach the target application, and **inject a payload via the port**.
-
-```http
-GET /example HTTP/1.1
-Host: vulnerable-website.com:malicious-payload
-```
-
-Other sites apply matching logic to allow arbitrary subdomains - in this case we may be able to bypass the validation by registering an arbitrary domain name that ends with the same sequence of characters as a whitelisted one.
-
-Or use a less-secure subdomain that we have already compromised.
-
-## Send ambiguous requests
-
-The code that *validates the host* and the one that does something vulnerable with it often are in different app components or even servers.
-
-If we identify the discrepancies in how they retrieve it, we may be able to issue a request that appears to have a *different host* depending which system is looking at it.
-
-### Inject duplicate Host headers
-
-Often the request is blocked. But, different technologies handle this case differently - but is common that one of the two headers have precedence over the other one, thus overriding its value.
-
-When systems disagree which header is the correct one - discrepancy that we may be able to exploit.
+In Burp Suite, the network destination can remain the legitimate target while the Host value is modified.
 
 For example:
-- Frontend gives precedence to the first header.
-- Backend to the last header.
 
 ```http
 GET /example HTTP/1.1
-Host: website.com
-Host: malicious-payload
+Host: unexpected.exxample
 ```
 
-So we used the first header to go to the backend and the second one to exploit it.
+Possible outcomes include:
 
-### Supply an absolute URL
+- The request is rejected
+- A defualt virtual host handles hte request
+- The app still responds normally
+- The supplied value is reflected or used in generated content
 
-Even that the request line specifies a relative path on the requested domain, some servers are also configured to understand requests for absolute URLs.
+Only the last two cases justify deeper investigation, and acceptance alone is not yet evidence of a security issue.
 
-This can lead to discrepancies between systems, as the request line should be given precedence when routing the request.
+## 3. Test validation
 
-```http
-GET https://vuln_site.com/ HTTP/1.1
-Host: malicious-payload
-```
+If arbitrary hosts are rejected, examine how validation is performed. Useful questions include:
 
-### Add line wrapping
+- Is hte port validated separately from the hostname?
+- Is matching exact or suffix-based?
+- Are trailing dots or case differences normalised?
+- Does the app accept an unexpected subdomain?
+- Does hte front-end validate the same value the back-end later uses?
 
-A space character can uncover important behavior on how the servers will interpret the host header.
-
-Some interpret the indented header as a wrapped line - treat it as part of the preceding header's value...
-
-Others ignore it. So, this may uncover discrepancies.
-
-```http
-GET /example HTTP/1.1
-    Host: malicious-payload
-Host: website.com
-```
-
-In this case, the website may block multiple Host headers, but if the front-end *ignores* the intended header, the request will be processed as an ordinary request.
-
-If back-end ignores the leading space and givevs the precedence to the first header in case of dupliccates, might allow us to pass values via the *wrapped* Host header.
-
-## Inject host override headers
-
-There are some HTTP headers that are designed to override the Host header value.
-
-Since sites are often accessed via intermediary systems, such as *load balancers* or *reverse proxies* the Host header that the back-end receives can contain the name of such systems.
-
-This is not relevant for them, so the frontend may inject `X-Forwarded-Host` header, which has the original value of the Host header.
-
-So, when this is present, many frameworks use this, and this may be used sometimes to inject some malicious payload.
+A representative test is:
 
 ```http
 GET /example HTTP/1.1
-Host: website.com
-X-Forwarded-Host: malicious-payload
+Host: target.example:<TEST_VALUE>
 ```
 
-There are also some other headers that have a similar purpose:
+This is not an universal bypass. It is a way to check whether different components parse the authority differently.
+
+## 4. Test duplicate Host handling
+
+Different HTTP components may disagree about duplicate host headers.
 
 ```http
+GET /example HTTP/1.1
+Host: target.example
+Host: attacker.example
+```
+
+A front-end may use one value for routing while a back-end may use another for app logic.
+
+Modern servers often reject this request, which is the safer behavior. Where the request is accepted, the important task is to determine which component uses which value.
+
+
+## 5. Test absolute-form request targets
+
+Some servers and proxies support an absolute URI in the request line:
+
+```http
+GET https://target.example/example HTTP/1.1
+Host: attacker.example
+```
+
+This can reveal disagreement about whether routing or app logic should trust the request target or the Host target.
+
+## 6. Test trusted-proxy headers
+
+Common candidates include:
+
+```test
+X-Forwarded-Host
+Forwarded
 X-Host
 X-Forwarded-Server
 X-HTTP-Host-Override
-Forwarded
 ```
 
+For example:
 
+```http
+GET /example HTTP/1.1
+Host: target.exmaple
+X-Forwarded-Host: attacker.example
+```
+
+These headers anre not inherently unsafe. The vulnerability appears when an app trusts a client-supplied override header that should only be accepted from a known intermediary.
+
+## 7. Trace the value to a security-sensitive sink
+
+The most important step is to follow the modified value.
+
+Examples of meaningful sinks include:
+
+- Password-reset links
+- Account-verification links
+- Redirect targets
+- Cache keys
+- Internal routing decisions
+- Server-side requests
+- HTML or JavaScript contexts
+
+A reflected Host value in a harmless debug page is not equivalent to account takeover.
+
+## 8. Validate the full impact
+
+For a password-reset workflow, I would want to confirm the complete chain:
+
+```text
+attacker-controlled host metadata
+        ↓
+application generates poisoned reset link
+        ↓
+victim receives or follows the link
+        ↓
+reset secret reaches attacker-controlled infrastructure
+        ↓
+secret is accepted by the legitimate reset endpoint
+```
+
+This separates a genuine account-compromise path from a theoretical observation.
+
+## Defensive perspective
+
+A robust design should:
+
+- Use a configured canonical origin for security-sensitive absolute URLs
+- Reject unexpected Host values at the edge
+- Strip or overwrite proxy headers received from untrusted clients
+- Trust forwarding metadata only from known proxies
+- Keep Host hanlding consistent across the entire request path
+- Avoid using client-controlled authority information for access-control decisions
+
+## Navigation
+
+[Host header overview](README.md) | [Assessment index](../../README.md) | [Next: Password reset poisoning](password-reset-poisoning/README.md)
