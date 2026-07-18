@@ -8,17 +8,17 @@ The work started as practical notes from `PortSwigger Web Security Academy labs`
 
 The current assessments focus on three areas:
 
-- OAuth and authorization flow security.
-- HTTP Host header trust and password reset poisoning
-- File upload validation and server-side execution
+- OAuth and authorization-flow security
+- HTTP Host header trust and password-reset poisoning
+- File-upload validation and server-side execution
 
 The completed lab work includes:
 
-- Authorization code leakage through insufficient `redirect_uri` validation
-- Basic password reset poisoning through attacker-controlled host information
-- Password reset poisoning through `X-Forwarded-Host`
-- Password reset poisoning through dangling markup
-- File upload blacklist bypass through an uploaded Apache `.htaccess` file
+- Authorization-code leakage through insufficient `redirect_uri` validation
+- Basic password-reset poisoning through attacker-controlled host information
+- Password-reset poisoning through `X-Forwarded-Host`
+- Password-reset poisoning through dangling markup
+- File-upload blacklist bypass through an uploaded Apache `.htaccess` file
 
 ## Repository structure
 
