@@ -1,57 +1,79 @@
-# SSRF via flawed request parsing
+# HTTP Host Header Security
 
-## HTTP Host header
+The HTTP Host value tells a server which authority the client intends to reach. 
 
-Is a mandatory request header as of `HTTP/1.1`.
+In HTTP/1.1, the `Host` hedaer is required. 
 
-Accessing `https://portswigger.net/web-security` the browser composes the reqeust as follows:
+In HTTP/1, equivalent authority information is carried by the `:authority` pseudo-header, although security tools often continue to present hte concept in familiar Host-header terms.
 
-```http
-GET /web-security HTTP/1.1
-Host: portswigger.net
+Modern web apps frequently sit behind reverse proxies, load balancers, CDNs, API gateways, and other intermediaries. As a result, several components may parse or rewrite host information before the request reaches app code.
+
+That becomes a security issue when attacker-controlled host metadata is trusted for something sensitive.
+
+## Where the Host valiue is used
+
+Apps and supporting infrastructure may use host information for:
+
+- Virtual-host routing
+- Selecting a back-end service
+- Constructing absolute URLs
+- Generating links in emails
+- Cache keys
+- Redirects
+- Access-control decisions
+- Internal routing
+
+The header is supplient by the client, so it should not automatically be treated as a trusted soruce of hte apps canonical public origin.
+
+## Common failure patterns
+
+### Building absolute URLs from untrusted request metadata
+
+A password-reset workflow may generate a link like:
+
+```text
+https://<HOST_FROM_REQUEST>/forgot-password?token<RESET_TOKEN>
 ```
 
-Sometimes, for example when the request has been forwarded by an intermediary system, the `Host` can be changed before it reaches the back-end.
+If the app trusts an attackerc-controlled host value, the secret token can be sent to an attacker-controlled domain.
 
-Historically, each IP address had host content for a single domain, but due to the cloud-based solution and outsorcing, now multiple websites and apps have the same IP address.
+### Trusting proxy override headers from untrusted clients
 
-This is a common result of the following scenarios:
+Headers such as `X-Forwarded-Host` may be added by trusted infrastructure, but an app can become vulnerable if arbitrary internet clietns are also allowed to set them and the app gives those values precedence.
 
-### Virtual Hosting
+### Inconsistent parsing between components
 
-A single web server hosts multiple websites or apps. 
+A front end and a back end may disagree about:
 
-These distinct websites will have a different domain name, but they share a single server known as `virtual hosts`.
+- Which Host value is authoritative
+- Whether a port is part of validation
+- How duplicate Host headers are handled
+- Whether an absolute-form request target overrides the Host header
+- Which forwarding header should be trusted
 
-### Routing traffic via an intermediary
+A value rejected or normalised by one component may still reach another component in a different form.
 
-Websites are hosted on distinct back-end servers, but the traffic is routed through an intermediary system.
+## Potential consequences
 
-This can be a simple `load balancer` or a `reverse proxy server`. This is prevalent especially where clients access the website via a `CDN`.
+Unsafe Host handling can contribute to:
 
-So, all of the domain names resolve to a single IP address of the intermediary component. 
-
-But same as with `virtual hosting` the reverse proxy or load balancer needs to know the appropriate back-end to which it should route the requests.
-
-### How is this problem solved?
-
-On both cases, the **Host Header** is relied on to specify the recipient. 
-
-When a browser sends the request, the URL resolves to the IP address of the server. When the servver receivevs the request, it refers to the **Host header** to determine the intended back-end and forward the request.
-
-## HTTP Host header attack?
-
-If the server implicitly trusts the **Host Header**, and fails to alidate it properly, an attacker can inject harmful payloads to manipulate server-side behavior - **Host header injection**.
-
-*Off-the-shelf* web apps usually don't know the domain they are deployed, and when they need to know the domain, for example to generate an absolute URL included in an email, they may retrieve the domain from thet Host header:
-
-```html
-<a href="https://_SERVER['HOST']/support">Contact support</a>
-```
-
-If the value is not properly escaped or validated, as it is user controllable, and used between a number of interactions also between different systems in the infrastructure, it can lead to a range of vulnerabilities:
+- Password reset poisoning
 - Web cache poisoning
-- Business logic flaws in specified functionality
 - Routing-based SSRF
-- Classic server-side vulnerabilities, such as SQL injection.
+- Authentication or access-control mistakes
+- Open redirects
+- Injection into generated content
 
+The exact impact depends on where the host value is used.
+
+## Completed work
+
+- [Testing methodology for Host header vulnerabilities](testing-methodology.md)
+- [Password reset poisoning overview](password-reset-poisoning/README.md)
+- [Basic Host header poisoning](password-reset-poisoning/01-basic-host-header-poisoning.md)
+- [Poisoning through X-Forwarded-Host](password-reset-poisoning/02-poisoning-via-x-forwarded-host.md)
+- [Poisoning through dangling markup](password-reset-poisoning/03-poisoning-via-dangling-markup.md)
+
+## Navigation
+
+[Previous: OAuth security](../01-oauth/README.md) | [Assessment index](../../README.md) | [Next: Host header testing methodology](testing-methodology.md)
