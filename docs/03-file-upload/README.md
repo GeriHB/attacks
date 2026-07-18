@@ -1,75 +1,63 @@
-# Web Shell Upload
+# File Upload Security
 
-The following PHP one-liner can be used to read arbitrary files from the server's filesystem:
-```php
-<?php echo file_get_contents('/path/to/target/file'); ?>
-```
-While a more versatile web shell can be:
-```php
-<?php echo system($_GET['command']; ?)>
-```
-this enables to pass a system command via a query:
+File upload functionality creates a boundary between attacker-controleld content and server-side storage or processing.
+
+The key security question is not only whether a file can be uploaded, but what the server does with the file after upload:
+
+- Where is it stored?
+- Can hte attacker control its name or extension?
+- Is it served back to users?
+- Is it interpreted by the web server or another processor?
+- Can directory-specific configuration change how the file is handled?
+
+A file becomes especially dangerous when attacker-controlled content reaches an executable context.
+
+## Main validation layers
+
+### Extension validation
+
+A denylist such as "block `.php`" is fragile because executable file types and hanlder mappings vary across platforms and configurations.
+
+A safer approach is to allow only the small set of extensions the feature actually requires.
+
+### MIME and Content-Type validation
+
+In multipart uploads, the client supplies a `Content-Type` calue for each part:
+
 ```http
-GET /example/exploit.php?command=id HTTP/1.1
+Content-Disposition: form-data; name="avatar"; filename="image.jpg"
+Content-Type: image/jpeg
 ```
 
-## 1. Flawed file type validation
-When sending large amounts of binary data, the content type `multipart/form-data` is preferred.
+That value is attacker-controlled. It can be useful as one validation signal, but it should not be the only basis for trsuting the file.
 
-*Example:*
-```http
-POST /images HTTP/1.1
-    Host: normal-website.com
-    Content-Length: 12345
-    Content-Type: multipart/form-data; boundary=---------------------------012345678901234567890123456
+### Content validation
 
-    ---------------------------012345678901234567890123456
-    Content-Disposition: form-data; name="image"; filename="example.jpg"
-    Content-Type: image/jpeg
+The app can inspect file signatures, parse the file with an appropriate library, and re-encode media where practical.
 
-    [...binary content of example.jpg...]
+Even content inspection should be treated as one layer rathar than a complete defence.
 
-    ---------------------------012345678901234567890123456
-    Content-Disposition: form-data; name="description"
+### Storage and execution context
 
-    This is an interesting description of my image.
+A correctly validated upload is still safer when it is:
 
-    ---------------------------012345678901234567890123456
-    Content-Disposition: form-data; name="username"
+- Stored outside the web root
+- Renamed by the app
+- Served as data rather than executed
+- Isolated from app credentials and sensitive files
+- Protected by restrictive filesystem permissions
 
-    wiener
-    ---------------------------012345678901234567890123456--
-```
-Here each part has a `Content-Disposition` header that provides basin information about the input field, but they also contain their `Content-Type` whith tells the server the `MIME` type of the data.
+### Server configuration files
 
-Websites sometime try to validate file uploads by checking this `Content-Type` if it matches the expected `MIME` type. 
+Some platforms support per-directory configuration files.
 
-**Problems** may arise when the valie of this header is implicitly trusted by the server, and no further validation is performed to check if the contents match the supposed MIME type. 
+Examples include:
 
-## 2. Insufficient blacklisting of dangerous file types
+- Apache `.htaccess`
+- IIS `web.config`
 
-Its *difficult* to block every possible file extension that can be dangerous, such as `.php5, .shtml`, etc.
+If an upload feature allows an attacker to create or replace such a file in a served directory, the attacker may be able to change how later uploads are interpreted.
 
-### 2.1 Overriding the server configuration
+## Navigation
 
-Servers don't execute files unless they have been configured.
-
-In order for Apache servers to execute PHP files requested by clients, devs have to add the following directives on the `/etc/apache2/apache2.conf` file:
-
-```php
-LoadModule php_module /usr/lib/apache2/module/libphp.so
-    AddType application/x-httpd-php .php
-```
-
-Some servers also allow devs to create config files to override or add to the global settings.
-
-On *Apache*, it will load *directory-specific* config files from the file `.htaccess` if it's present.
-
-On *IIS* servers devs can make directory-specific configs using the `web.config` file, which may include directives as the floowing, that allows JSON files to be served to users:
-
-```config
-<staticContent>
-    <mimeMap fileExtension=".json" mimeType="application/json" />
-    </staticContent>
-```
-
+[Previous: Password reset poisoning via dangling markup](../02-host-header/password-reset-poisoning/03-poisoning-via-dangling-markup.md) | [Assessment index](../../README.md) | [Next: Extension blacklist bypass](01-extension-blacklist-bypass-via-htaccess.md)
